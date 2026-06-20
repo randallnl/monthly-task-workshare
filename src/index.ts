@@ -27,7 +27,10 @@ const MAX_MONTHLY_DISCOUNT_PERCENT = 75;
 
 // Wrangler generates Env from wrangler.jsonc. Secrets are intentionally absent
 // from that file, so this is the one additional runtime binding.
-type RuntimeEnv = Env & { MONDAY_API_TOKEN: string };
+type RuntimeEnv = Env & {
+  MONDAY_API_TOKEN: string;
+  MANUAL_RUN_TOKEN: string;
+};
 
 class MondayClient {
   constructor(private readonly token: string) {}
@@ -142,6 +145,31 @@ function previousMonth(reference: Date): string {
   return new Date(Date.UTC(reference.getUTCFullYear(), reference.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
 }
 
+function dashboardHtml(): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>CoLab Work-Trade Summary</title><style>
+    :root{font-family:ui-sans-serif,system-ui,sans-serif;color:#17221a;background:#f7f5ef}body{display:grid;place-items:center;min-height:100vh;margin:0;padding:1.5rem;box-sizing:border-box}main{width:min(100%,34rem);padding:2rem;border:1px solid #d8d4c8;border-radius:1rem;background:#fffefa;box-shadow:0 1rem 3rem #453d2714}h1{margin:0 0 .5rem;font-size:1.65rem}p{line-height:1.5;color:#4b554b}label{display:grid;gap:.4rem;margin:1.15rem 0;font-weight:650}input{padding:.7rem .8rem;border:1px solid #b9b8ad;border-radius:.5rem;font:inherit;background:white}button{width:100%;padding:.8rem 1rem;border:0;border-radius:.5rem;color:white;background:#246947;font:inherit;font-weight:700;cursor:pointer}button:disabled{cursor:wait;opacity:.65}#result{min-height:1.5rem;margin:1rem 0 0;font-weight:600}.hint{font-size:.88rem}
+  </style></head><body><main><h1>CoLab work-trade summary</h1><p>Run a monthly activity summary now. Existing summaries for the same member and month are updated rather than duplicated.</p><form id="run-form"><label>Month to summarize <input id="month" type="month" required></label><label>Manual run key <input id="token" type="password" autocomplete="current-password" required></label><p class="hint">This is the <code>MANUAL_RUN_TOKEN</code> Worker secret. The page does not save it.</p><button id="run-button" type="submit">Run summary</button></form><p id="result" role="status" aria-live="polite"></p></main><script>
+    const month=document.querySelector('#month');const now=new Date();month.value=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-1,1)).toISOString().slice(0,7);document.querySelector('#run-form').addEventListener('submit',async event=>{event.preventDefault();const token=document.querySelector('#token').value;const button=document.querySelector('#run-button');const result=document.querySelector('#result');button.disabled=true;result.textContent='Running summary…';try{const response=await fetch('/api/run',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({month:month.value})});const body=await response.json();if(!response.ok)throw new Error(body.error||'The run could not be started.');result.textContent='Complete: '+body.activities+' activities across '+body.members+' members for '+body.month+'.'}catch(error){result.textContent=error instanceof Error?error.message:'The run could not be started.'}finally{button.disabled=false}});
+  </script></body></html>`;
+}
+
+async function tokenMatches(expected: string, supplied: string): Promise<boolean> {
+  const encoder = new TextEncoder();
+  const [expectedHash, suppliedHash] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(expected)),
+    crypto.subtle.digest("SHA-256", encoder.encode(supplied)),
+  ]);
+  const expectedBytes = new Uint8Array(expectedHash);
+  const suppliedBytes = new Uint8Array(suppliedHash);
+  let difference = expectedBytes.length ^ suppliedBytes.length;
+  for (let index = 0; index < expectedBytes.length; index += 1) difference |= expectedBytes[index] ^ suppliedBytes[index];
+  return difference === 0;
+}
+
+function requestedMonth(value: unknown): string | null {
+  return typeof value === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(value) ? value : null;
+}
+
 function scoreActivity(activity: Activity): ScoredActivity {
   const activityType = activity.type.toLocaleLowerCase();
   const detail = `${activity.itemName} ${activity.description}`.toLocaleLowerCase();
@@ -235,8 +263,30 @@ export default {
     const month = previousMonth(new Date());
     ctx.waitUntil(summarizeMonth(env, month).then((result) => console.log(JSON.stringify({ event: "monthly_summary_completed", month, ...result }))));
   },
-  async fetch(request): Promise<Response> {
-    if (new URL(request.url).pathname === "/") return Response.json({ service: "colab-monthly-worktrade-summary", schedule: "monthly" });
+  async fetch(request, env): Promise<Response> {
+    const path = new URL(request.url).pathname;
+    if (request.method === "GET" && path === "/") {
+      return new Response(dashboardHtml(), { headers: { "Content-Type": "text/html; charset=UTF-8", "Cache-Control": "no-store" } });
+    }
+    if (request.method === "POST" && path === "/api/run") {
+      const authorization = request.headers.get("Authorization") ?? "";
+      const suppliedToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+      if (!env.MANUAL_RUN_TOKEN || !(await tokenMatches(env.MANUAL_RUN_TOKEN, suppliedToken))) {
+        return Response.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+      }
+      let body: unknown;
+      try { body = await request.json(); } catch { return Response.json({ error: "A valid JSON body is required." }, { status: 400 }); }
+      const month = requestedMonth(body && typeof body === "object" ? (body as { month?: unknown }).month : undefined);
+      if (!month) return Response.json({ error: "month must use YYYY-MM." }, { status: 400 });
+      try {
+        const result = await summarizeMonth(env, month);
+        console.log(JSON.stringify({ event: "manual_summary_completed", month, ...result }));
+        return Response.json({ month, ...result }, { headers: { "Cache-Control": "no-store" } });
+      } catch (error) {
+        console.error(JSON.stringify({ event: "manual_summary_failed", month, error: error instanceof Error ? error.message : "Unknown error" }));
+        return Response.json({ error: "The summary run failed. Check the Worker logs for details." }, { status: 500, headers: { "Cache-Control": "no-store" } });
+      }
+    }
     return new Response("Not found", { status: 404 });
   },
 } satisfies ExportedHandler<RuntimeEnv>;

@@ -25,6 +25,12 @@ The primary index is `member email` (`text_mm4g8yfa`), with `Email Address` (`em
    wrangler secret put MONDAY_API_TOKEN
    ```
 
+   Add a second secret to protect the manual-run dashboard:
+
+   ```sh
+   wrangler secret put MANUAL_RUN_TOKEN
+   ```
+
 3. Review the settings in `wrangler.jsonc`, especially `MEMBER_YES_LABELS`, `APPROVED_STATUS_LABELS`, and the discount output mode. Leave `APPROVED_STATUS_LABELS` blank to include every member activity; use labels such as `Approved,Done` if the status column is an approval gate.
 4. Verify and deploy:
 
@@ -34,3 +40,7 @@ The primary index is `member email` (`text_mm4g8yfa`), with `Email Address` (`em
    ```
 
 The `scheduled` handler can be exercised locally with `wrangler dev --test-scheduled`, then requesting `/__scheduled`.
+
+## Manual dashboard
+
+Open the Worker URL in a browser. Choose a calendar month, enter the `MANUAL_RUN_TOKEN` value, and select **Run summary**. The page does not store the run key; it returns the number of activities and members processed when the run finishes.
