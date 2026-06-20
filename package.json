@@ -1,0 +1,20 @@
+{
+  "name": "monthly-task-workshare",
+  "version": "1.0.0",
+  "description": "",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": {
+    "check": "wrangler types && tsc --noEmit",
+    "test": "npm run check",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "typescript": "^6.0.3"
+  }
+}

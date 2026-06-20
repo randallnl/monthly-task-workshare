@@ -1,0 +1,36 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "colab-monthly-worktrade-summary",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "triggers": {
+    // 10:15 UTC on the first day of every month. It summarizes the previous calendar month.
+    "crons": ["15 10 1 * *"]
+  },
+  "vars": {
+    "ACTIVITY_BOARD_ID": "18408298018",
+    "SUMMARY_BOARD_ID": "18418643764",
+    "ACTIVITY_MEMBER_EMAIL_COLUMN": "text_mm4g8yfa",
+    "ACTIVITY_FALLBACK_EMAIL_COLUMN": "email_mkrh6fvx",
+    "ACTIVITY_MEMBER_FLAG_COLUMN": "single_select7pl9kuz",
+    "ACTIVITY_TYPE_COLUMN": "single_selectis1ajb9",
+    "ACTIVITY_DESCRIPTION_COLUMN": "long_text3mhw34i5",
+    "ACTIVITY_DATE_COLUMN": "date_mm2mqnq2",
+    "ACTIVITY_STATUS_COLUMN": "color_mm1rha8b",
+    "SUMMARY_DATE_COLUMN": "date_mm4ghdqj",
+    "SUMMARY_DISCOUNT_COLUMN": "numeric_mm4gzyfz",
+    "SUMMARY_TEXT_COLUMN": "text_mm4g1s4c",
+    "SUMMARY_EMAIL_COLUMN": "text_mm4g2v9p",
+    "MEMBER_YES_LABELS": "Yes",
+    // Empty means every member activity is included. Set e.g. "Approved,Done" to filter.
+    "APPROVED_STATUS_LABELS": "",
+    // "percent" writes 20 for a 20% discount. "dollars" requires MEMBERSHIP_MONTHLY_PRICE.
+    "DISCOUNT_OUTPUT_MODE": "percent",
+    "MEMBERSHIP_MONTHLY_PRICE": ""
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+}
